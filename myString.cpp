@@ -91,9 +91,7 @@ private:
         // store a 31-bit number with LSB flag = 0b1
         constexpr size_t limit = (~0b0) - 1;
         assert(num <= limit);
-        num <<= 1;
-        num |= 0b1;
-        _cap = num;
+        _cap = ((num << 1) | 0b1);
     }
 };
 
@@ -106,6 +104,7 @@ public:
             init();
         }
         _shortStr(char* c){
+            init();
             *this+=c;
         }
         inline size_t size(){
@@ -132,55 +131,98 @@ public:
         }
 private:
     constexpr void init(){
-        data[0] = 0b0;
-        data[1] = '\0';
+        memset(data, 0, 24);
+        data[2] = '\0';
     }
 };
 
-// union _strData{
-//     _longStr longStr;
-//     _shortStr shortStr;
-//     byte raw[24];
-// };
+union _strData{
+    _longStr longStr;
+    _shortStr shortStr;
+    byte raw[24];
+};
 
-// class myStr{
-//     _strData rep {  };
-//     public:
-//         myStr(){
+class myStr{
+    _strData rep {  };
+    public:
+        myStr(){
             
-//         }
-//         char* raw(){
-//             return (isLongStr() ? rep.longStr.raw() : rep.shortStr.raw());
-//         }
-//         size_t size(){
-//             if(isLongStr()){
-//                 return rep.longStr.size();
-//             }
-//             else{
-//                 return rep.shortStr.size();
-//             }
-//         }
-//         void operator+=(const char c){
-//             auto isLongNow = isLongStr();
-//             if(isLongNow){
-//                 rep.longStr += c;
-//             }
-//             else if(rep.shortStr.size() < 22){
-//                 rep.shortStr += c;
-//             }
-//         }
-//         bool isLongStr(){
-//             return strData.raw[0];
-//         }
-//     private:
+        }
 
-// };
+        myStr(const _shortStr & s){
+            rep.shortStr = s;
+        }
 
-// std::ostream& operator<<(std::ostream& os, myStr & s ){
-//     // os << s.;
-//     os << s.raw();
-//     return os;
-// }
+        myStr(const _longStr & s){
+            rep.longStr = s;
+        }
+
+        inline char* raw(){
+            return (isLongStr() ? rep.longStr.raw() : rep.shortStr.raw());
+        }
+        inline size_t size(){
+            if(isLongStr()){
+                return rep.longStr.size();
+            }
+            else{
+                return rep.shortStr.size();
+            }
+        }
+        inline void operator+=(const char c){
+            auto isLongNow = isLongStr();
+            if(isLongNow){
+                rep.longStr += c;
+            }
+            else if(rep.shortStr.size() < 22){
+                rep.shortStr += c;
+            }
+            else{
+                // convert short str to long, then add the char
+                convert2long();
+                rep.longStr += c;
+            }
+        }
+
+        inline void operator+=(char* c){
+            auto isLongNow = isLongStr();
+            auto len = strlen(c);
+            if(size() + len <= 22){
+                rep.shortStr += c;
+                return;
+            }
+            if(size() + len > 22)
+                convert2long();
+            rep.longStr += c;
+        }
+
+        inline bool isLongStr(){
+            constexpr byte flag {1};
+            return (rep.raw[0] & flag) == flag;
+        }
+
+        inline void clear(){
+            isLongStr() ? rep.longStr.clear() : rep.shortStr.clear();
+        }
+    private:
+        void convert2long(){
+            assert(!isLongStr());
+            auto size = rep.shortStr.size();
+            auto heapData = new char[size+1];
+            memcpy(heapData, rep.shortStr.raw(), size+1);
+            // low-level operations writing byte data as longStr representation
+            auto capAddr = reinterpret_cast<size_t*>(&rep.raw[0]);
+            *capAddr = (((size+1) << 1) | 0b1);
+            auto sizeAddr = reinterpret_cast<size_t*>(&rep.raw[sizeof(size_t)]);
+            *sizeAddr = size;
+            auto dataAddr = reinterpret_cast<char**>(&rep.raw[sizeof(size_t)*2]);
+            *dataAddr = heapData;
+        }
+};
+
+std::ostream& operator<<(std::ostream& os, myStr & s ){
+    os << s.raw();
+    return os;
+}
 
 std::ostream& operator<<(std::ostream& os, _longStr & s ){
     os << s.raw();
@@ -230,11 +272,36 @@ void testShortStr(){
     ss.clear();
 }
 
+string typeHelper(myStr & s){
+    return (s.isLongStr() ? " long str " : " short str ");
+}
+
+void testMyStr(){
+    char *word = "abcdefg"; // abcdefg
+    _longStr ls(word);
+    _shortStr ss("123456");
+
+    myStr s1(ls), s2(ss);
+
+    cout << "s1 is" << typeHelper(s1) << ", s2 is" << typeHelper(s2) << '\n';  // long and short
+    cout << "values are: " << s1 << ", " << s2 << endl;
+
+    s2.clear();
+    int multiplyHowManyTimes = 3;
+    while(multiplyHowManyTimes--){
+        s2 += "123456789";
+    }
+    cout << "s2 is" << typeHelper(s2) << ", values = " << s2 << ", size = " << s2.size() << '\n';  // long and short
+}
+
 int main(){
     printf("=====TEST LONG STR======\n");
     testLongStr();
     printf("===============\n\n");
     printf("=====TEST SHORT STR======\n");
     testShortStr();
+    printf("===============\n\n");
+    printf("=====TEST MY STR======\n");
+    testMyStr();
     printf("===============\n\n");
 }
