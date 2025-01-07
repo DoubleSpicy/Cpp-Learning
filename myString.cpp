@@ -6,7 +6,9 @@
 using namespace std;
 
 // a long-short string implementation that is kinda close to libc++
-// assume your system is little endian!
+// short string is pre-allocated 24 bytes in stack
+// heap-using long string is converted when necessary
+// IMPORTANT: assume your system is little endian!
 
 class _longStr {
     size_t _cap; // size allocated, smallest bit is long/short str indicator
@@ -103,8 +105,8 @@ public:
         _shortStr(){
             init();
         }
-        _shortStr(){
-
+        _shortStr(char* c){
+            *this+=c;
         }
         inline size_t size(){
             return strlen(raw());
@@ -114,6 +116,13 @@ public:
             auto curSize = size();
             raw()[curSize+1] = c;
             raw()[curSize+2] = '\0';
+        }
+        inline void operator+=(char* c){
+            auto newSize = size() + strlen(c);
+            assert(newSize <= 23);
+            auto curSize = size();
+            memcpy(raw()+size(), c, strlen(c));
+            raw()[newSize] = '\0';
         }
         inline char* raw(){
             return &data[1];
@@ -178,6 +187,11 @@ std::ostream& operator<<(std::ostream& os, _longStr & s ){
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, _shortStr & s ){
+    os << s.raw();
+    return os;
+}
+
 
 void testLongStr(){
     char *word = "abcdefg"; // abcdefg
@@ -203,10 +217,24 @@ void testLongStr(){
 }
 
 void testShortStr(){
-    
+    _shortStr ss("123456");
+    cout << ss << ", len is " << ss.size() <<  endl; // 123456|, len is 6
+    ss += "789";
+    cout << ss << ", len is " << ss.size() <<  endl; // 123456789, len is 9
+    ss.clear(); 
+    cout << ss << ", len is " << ss.size() <<  endl; //  , len is 0
+
+    ss += "12345678912345678912345"; // 23 chars, OK
+    cout << ss << ", len is " << ss.size() <<  endl; // 12345678912345678912345 , len is 23
+    // ss += "6"; // 24 chars will overflow!
+    ss.clear();
 }
 
 int main(){
+    printf("=====TEST LONG STR======\n");
     testLongStr();
+    printf("===============\n\n");
+    printf("=====TEST SHORT STR======\n");
     testShortStr();
+    printf("===============\n\n");
 }
